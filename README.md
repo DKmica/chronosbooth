@@ -1,64 +1,55 @@
-# Chronos Booth
+# Chronos Booth (Native Android)
 
-Chronos Booth is a React + Vite app that transforms portraits into historical/futuristic themed images with Gemini.
+Chronos Booth is now a **native Android app** (Jetpack Compose) that:
 
-## Local web development
+- Captures a photo from camera or uploads from gallery.
+- Uses Gemini to **analyze** the portrait.
+- Uses Gemini image generation to create a transformed image in a selected era style.
+- Runs fully as an Android app without webview/web runtime dependencies.
 
-1. Install dependencies:
-   ```bash
-   npm install
+## Project location
+
+- Android app: `android/`
+
+## Secure API key setup (do not commit secrets)
+
+> ⚠️ Real production security: do **not** ship long-lived API keys in client apps.
+> Use your own backend token exchange/proxy for Play Store production.
+
+For local development in this repo:
+
+1. Add your key in `android/local.properties` (this file is gitignored):
+   ```properties
+   GEMINI_API_KEY=your_key_here
    ```
-2. Create env file:
+2. Or set an environment variable:
    ```bash
-   cp .env.example .env.local
-   ```
-3. Set `VITE_GEMINI_API_KEY` in `.env.local`.
-4. Start the dev server:
-   ```bash
-   npm run dev
+   export GEMINI_API_KEY=your_key_here
    ```
 
-## Android Studio setup (included in this repo)
+The app reads `GEMINI_API_KEY` into `BuildConfig` during build.
 
-This repo now includes a native Android wrapper project at `android/` that loads the built web app from bundled assets (`app/src/main/assets/public`).
-
-### Build and sync web assets into Android
+## Build debug APK
 
 ```bash
-npm run android:sync
+cd android
+gradle assembleDebug
 ```
 
-### Open in Android Studio
-
-1. Open Android Studio.
-2. Choose **Open** and select the `android/` directory.
-3. Let Gradle sync.
-4. Build debug APK:
-   ```bash
-   ./gradlew assembleDebug
-   ```
-
-### Build Play Store bundle (AAB)
+## Build release bundle (AAB)
 
 ```bash
-npm run android:release
+cd android
+gradle bundleRelease
 ```
 
-Generated output:
+Output:
 `android/app/build/outputs/bundle/release/app-release.aab`
 
-## Play Store readiness checklist
+## Google Play readiness checklist
 
-Before uploading to Google Play Console:
-
-1. Set your final package ID in `android/app/build.gradle` (`applicationId`).
-2. Bump `versionCode` and `versionName` for every release.
-3. Add your own launcher icons and splash assets.
-4. Create a release keystore and configure signing in `android/app/build.gradle`.
-5. Test on real devices (camera permission flow and network behavior).
-6. Provide required Play Console metadata (privacy policy, screenshots, content rating, data safety form).
-
-## Notes
-
-- The app reads API keys from Vite env vars (`VITE_GEMINI_API_KEY` / `VITE_API_KEY`).
-- `android/app/src/main/assets/public` should be refreshed with `npm run android:sync` before each Android build.
+1. Configure your release keystore/signing config.
+2. Replace default launcher icon and branding assets.
+3. Increment `versionCode`/`versionName` for each release.
+4. Add privacy policy and complete Play Console Data Safety form.
+5. Move API key usage to secure backend before production launch.
