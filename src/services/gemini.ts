@@ -21,7 +21,7 @@ export const analyzeImage = async (base64Image: string): Promise<string> => {
           },
         },
         {
-          text: "Analyze this person's appearance, expression, and clothing. Describe them in detail so I can use this description to place them in a historical scene. Keep the description concise but descriptive.",
+          text: "Analyze this person in detail: facial structure and distinguishing features, expression, pose/body orientation, hair, and clothing. Return a concise but rich identity description optimized for preserving this exact person's likeness during historical image-to-image transformations.",
         },
       ],
     },
@@ -32,13 +32,14 @@ export const analyzeImage = async (base64Image: string): Promise<string> => {
 export const transformToEra = async (
   originalImage: string,
   prompt: string,
-  customPrompt?: string
+  customPrompt?: string,
+  subjectAnalysis?: string
 ): Promise<string | null> => {
   const ai = getAI();
 
   const finalPrompt = customPrompt
-    ? `Edit this image based on this request: ${customPrompt}. Maintain the person's facial features but adapt them to the scene.`
-    : `Place the person in this photo into a highly detailed historical scene: ${prompt}. Ensure their face is clearly visible and naturally integrated into the scene. The person should be wearing era-appropriate clothing.`;
+    ? `Edit this image based on this request: ${customPrompt}. Preserve the same person's identity using this reference analysis: ${subjectAnalysis || "No prior analysis provided."} Keep facial features, expression, and pose coherent unless explicitly requested otherwise.`
+    : `Transform this portrait into the following era: ${prompt}. Use image-to-image editing to preserve the core facial structure and identity from the source person. Identity reference: ${subjectAnalysis || "No prior analysis provided."}. Replace the background, lighting, and attire to match the era naturally, while keeping the person clearly recognizable.`;
 
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-image",
