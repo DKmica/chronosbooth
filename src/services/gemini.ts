@@ -1,9 +1,9 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 const getAI = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not set");
+    throw new Error("API Key not found. Please select an API key.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -155,5 +155,41 @@ export const ERAS = [
     name: "Prehistoric Era",
     description: "A prehistoric landscape with massive ferns and a distant volcano. The person is dressed in primitive furs and carrying a stone tool, in a cinematic dawn-of-man style.",
     image: "https://picsum.photos/seed/caveman/800/600"
+  },
+  {
+    id: "noir",
+    name: "Film Noir",
+    description: "A shadowy detective office in 1940s Los Angeles, with venetian blinds casting stripes of light. The person is dressed as a private investigator in a trench coat and fedora, or a femme fatale in an elegant evening gown.",
+    image: "https://picsum.photos/seed/noir/800/600"
+  },
+  {
+    id: "steampunk",
+    name: "Steampunk Workshop",
+    description: "A cluttered Victorian workshop filled with brass gears, steam pipes, and ticking clocks. The person is an inventor wearing goggles, a leather apron, and mechanical gauntlets.",
+    image: "https://picsum.photos/seed/steampunk/800/600"
+  },
+  {
+    id: "atlantis",
+    name: "Lost City of Atlantis",
+    description: "An underwater city with glowing bioluminescent plants and ancient ruins. The person is dressed in ethereal, flowing garments made of sea silk and adorned with pearls and coral.",
+    image: "https://picsum.photos/seed/atlantis/800/600"
+  },
+  {
+    id: "mars",
+    name: "Mars Colony 2150",
+    description: "A futuristic colony on the red planet, with biodomes and rovers in the background. The person is wearing a sleek, high-tech spacesuit designed for exploration.",
+    image: "https://picsum.photos/seed/mars/800/600"
+  },
+  {
+    id: "disco",
+    name: "Disco Fever",
+    description: "A dazzling 1970s disco dance floor with a mirror ball and colorful lights. The person is wearing a sequined jumpsuit or bell-bottoms and platform shoes, ready to dance.",
+    image: "https://picsum.photos/seed/disco/800/600"
+  },
+  {
+    id: "frenchrev",
+    name: "French Revolution",
+    description: "A chaotic street scene in 18th-century Paris, with barricades and tricolor flags. The person is dressed as a revolutionary with a cockade hat and simple clothes, or an aristocrat in fine silks.",
+    image: "https://picsum.photos/seed/revolution/800/600"
   }
 ];

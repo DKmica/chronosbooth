@@ -638,9 +638,32 @@ export default function App() {
 
       {/* Footer */}
       <footer className="relative z-10 py-12 border-t border-white/5 text-center">
-        <div className="flex items-center justify-center space-x-2 text-zinc-600 text-xs uppercase tracking-[0.3em]">
-          <History className="w-3 h-3" />
-          <span>Chronos Booth Temporal Imaging</span>
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="flex items-center justify-center space-x-2 text-zinc-600 text-xs uppercase tracking-[0.3em]">
+            <History className="w-3 h-3" />
+            <span>Chronos Booth Temporal Imaging</span>
+          </div>
+          <button
+            onClick={async () => {
+              try {
+                // @ts-ignore
+                if (window.aistudio && window.aistudio.openSelectKey) {
+                  // @ts-ignore
+                  await window.aistudio.openSelectKey();
+                  // Force a reload or state update if needed, though the key is usually injected immediately
+                  alert("API Key updated successfully.");
+                } else {
+                  alert("API Key selection is not available in this environment.");
+                }
+              } catch (e) {
+                console.error("Failed to open key selector", e);
+              }
+            }}
+            className="text-zinc-700 hover:text-emerald-500 text-xs transition-colors flex items-center space-x-1"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>Configure Neural Link</span>
+          </button>
         </div>
       </footer>
     </div>
