@@ -176,12 +176,21 @@ export const Camera: React.FC<CameraProps> = ({ onCapture }) => {
               <h3 className="text-white font-semibold">Temporal Sensor Error</h3>
               <p className="text-zinc-500 text-sm">{error}</p>
             </div>
-            <button
-              onClick={startCamera}
-              className="px-6 py-2 bg-white text-black font-medium rounded-full hover:bg-zinc-200 transition-colors"
-            >
-              Retry Connection
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={startCamera}
+                className="px-6 py-2 bg-white text-black font-medium rounded-full hover:bg-zinc-200 transition-colors"
+              >
+                Retry Connection
+              </button>
+              <button
+                onClick={triggerFileUpload}
+                className="px-6 py-2 bg-emerald-500 text-black font-medium rounded-full hover:bg-emerald-400 transition-colors inline-flex items-center space-x-2"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Upload Instead</span>
+              </button>
+            </div>
           </motion.div>
         ) : !stream && !capturedImage ? (
           <motion.div 

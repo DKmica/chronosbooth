@@ -1,32 +1,54 @@
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, GenerateContentResponse, Part } from "@google/genai";
 
-const getAI = () => {
+const getAI = (): GoogleGenAI | null => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
   if (!apiKey) {
-    throw new Error("Missing VITE_GEMINI_API_KEY in environment variables.");
+    return null;
   }
   return new GoogleGenAI({ apiKey });
 };
 
+const getResponseText = (response: GenerateContentResponse): string | null => {
+  if (response.text) return response.text;
+
+  const parts = response.candidates?.[0]?.content?.parts;
+  const textParts = (parts || [])
+    .filter((part: Part) => typeof part.text === "string")
+    .map((part: Part) => part.text?.trim())
+    .filter(Boolean);
+
+  return textParts.length ? textParts.join("\n") : null;
+};
+
 export const analyzeImage = async (base64Image: string): Promise<string> => {
   const ai = getAI();
-  const response: GenerateContentResponse = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: base64Image.split(",")[1] || base64Image,
+  if (!ai) {
+    return "Portrait captured. API key not configured, so automatic multimodal identity analysis is unavailable.";
+  }
+
+  try {
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: "gemini-3.1-pro-preview",
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: base64Image.split(",")[1] || base64Image,
+            },
           },
-        },
-        {
-          text: "Analyze this person in detail: facial structure and distinguishing features, expression, pose/body orientation, hair, and clothing. Return a concise but rich identity description optimized for preserving this exact person's likeness during historical image-to-image transformations.",
-        },
-      ],
-    },
-  });
-  return response.text || "No analysis available.";
+          {
+            text: "Analyze this person in detail: facial structure and distinguishing features, expression, pose/body orientation, hair, and clothing. Return a concise but rich identity description optimized for preserving this exact person's likeness during historical image-to-image transformations.",
+          },
+        ],
+      },
+    });
+
+    return getResponseText(response) || "No analysis available.";
+  } catch (error) {
+    console.error("analyzeImage failed", error);
+    return "Analysis failed. You can still generate transformations; likeness preservation may be reduced.";
+  }
 };
 
 export const transformToEra = async (
@@ -37,32 +59,53 @@ export const transformToEra = async (
 ): Promise<string | null> => {
   const ai = getAI();
 
+  if (!ai) {
+    console.warn("Gemini API key missing; returning source image for manifest preview.");
+    return originalImage;
+  }
+
   const finalPrompt = customPrompt
     ? `Edit this image based on this request: ${customPrompt}. Preserve the same person's identity using this reference analysis: ${subjectAnalysis || "No prior analysis provided."} Keep facial features, expression, and pose coherent unless explicitly requested otherwise.`
     : `Transform this portrait into the following era: ${prompt}. Use image-to-image editing to preserve the core facial structure and identity from the source person. Identity reference: ${subjectAnalysis || "No prior analysis provided."}. Replace the background, lighting, and attire to match the era naturally, while keeping the person clearly recognizable.`;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash-image",
-    contents: {
-      parts: [
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: originalImage.split(",")[1] || originalImage,
+  let response: GenerateContentResponse;
+
+  try {
+    response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      config: {
+        responseModalities: ["IMAGE", "TEXT"],
+      },
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: originalImage.split(",")[1] || originalImage,
+            },
           },
-        },
-        { text: finalPrompt },
-      ],
-    },
-  });
+          { text: finalPrompt },
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("transformToEra failed", error);
+    return originalImage;
+  }
 
   const candidate = response.candidates?.[0];
   const parts = candidate?.content?.parts;
 
   for (const part of parts || []) {
-    if (part.inlineData) {
-      return `data:image/png;base64,${part.inlineData.data}`;
+    if (part.inlineData?.data) {
+      const mimeType = part.inlineData.mimeType || "image/png";
+      return `data:${mimeType};base64,${part.inlineData.data}`;
     }
+  }
+
+  const textResponse = getResponseText(response);
+  if (textResponse) {
+    console.warn("Image generation returned text without an image:", textResponse);
   }
 
   return null;
