@@ -63,10 +63,10 @@ export default function App() {
 
   const savePhoto = (data: string) => {
   const newPhoto: SavedPhoto = {
-    // Robust fallback for non-secure contexts (WebView)
-    id: typeof crypto.randomUUID === 'function' 
+    // Fallback ID generation
+    id: window.isSecureContext && crypto.randomUUID 
         ? crypto.randomUUID() 
-        : Math.random().toString(36).substring(2) + Date.now().toString(36),
+        : Math.random().toString(36).substring(2, 15),
     data,
     date: new Date().toLocaleString()
   };

@@ -15,44 +15,48 @@ declare global {
 }
 
 const getAI = () => {
+  // Vite environment variables check
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
   return apiKey ? new GoogleGenAI(apiKey) : null;
 };
 
 export const analyzeImage = async (base64Image: string): Promise<string> => {
-  // Check if we are running in the Android Wrapper
+  // --- ANDROID BRIDGE PATH ---
   if (window.ChronosAndroid) {
     return new Promise((resolve) => {
       const callbackId = `analyze_${Date.now()}`;
       
-      // Explicitly attach the listener to the window object
-      // This is what the Android side calls via evaluateJavascript
+      // Register listener IMMEDIATELY before calling native code
       window.onAnalysisResult = (id: string, result: string) => {
         if (id === callbackId) {
+          console.log("Analysis result received from Android");
           resolve(result);
-          // Clean up to prevent memory leaks
-          delete window.onAnalysisResult;
         }
       };
 
-      // Trigger the native Android AI SDK
-      window.ChronosAndroid.analyzeImage(base64Image, callbackId);
+      try {
+        window.ChronosAndroid.analyzeImage(base64Image, callbackId);
+      } catch (err) {
+        console.error("Android bridge call failed", err);
+        resolve("Bridge connection error.");
+      }
     });
   }
 
+  // --- WEB FALLBACK PATH ---
   const ai = getAI();
   if (!ai) return "API Key not configured.";
 
   try {
     const model = ai.getGenerativeModel({ model: ANALYSIS_MODEL });
     const result = await model.generateContent([
-      "Analyze this person in detail: facial structure, expression, hair, and clothing. Return a rich description for likeness preservation.",
+      "Analyze this person in detail: facial structure, expression, hair, and clothing. Return a rich identity description optimized for likeness preservation.",
       { inlineData: { mimeType: "image/jpeg", data: base64Image.split(",")[1] || base64Image } }
     ]);
     return result.response.text();
   } catch (error) {
-    console.error("Analysis failed", error);
-    return "Analysis unavailable.";
+    console.error("Web analysis failed", error);
+    return "Analysis unavailable in browser.";
   }
 };
 
@@ -64,14 +68,16 @@ export const transformToEra = async (
 ): Promise<string | null> => {
   const finalPrompt = customPrompt || prompt;
 
+  // --- ANDROID BRIDGE PATH ---
   if (window.ChronosAndroid) {
     return new Promise((resolve) => {
       const callbackId = `transform_${Date.now()}`;
       
       window.onTransformationResult = (id: string, result: string) => {
         if (id === callbackId) {
+          console.log("Transformation result received from Android");
+          // Android bridge sends back the base64 or description string
           resolve(result);
-          delete window.onTransformationResult;
         }
       };
 
@@ -79,26 +85,28 @@ export const transformToEra = async (
     });
   }
 
+  // --- WEB FALLBACK PATH ---
   const ai = getAI();
   if (!ai) return originalImage;
 
   try {
     const model = ai.getGenerativeModel({ model: TRANSFORMATION_MODEL });
-    const fullTextPrompt = `Transform this portrait: ${finalPrompt}. Identity: ${subjectAnalysis}. Preserve face, change background and attire.`;
+    const fullTextPrompt = `Transform this portrait: ${finalPrompt}. Identity Analysis: ${subjectAnalysis}. Keep face structure, change clothing and background to match the era.`;
     
     const result = await model.generateContent([
       fullTextPrompt,
-      { inlineData: { mimeType: "image/jpeg", data: originalImage.split(",")[1] } }
+      { inlineData: { mimeType: "image/jpeg", data: originalImage.split(",")[1] || originalImage } }
     ]);
     return result.response.text(); 
   } catch (error) {
-    console.error("Transformation failed", error);
+    console.error("Web transformation failed", error);
     return originalImage;
   }
 };
 
+// ERAS list remains exactly as you had it to ensure the UI populates
 export const ERAS = [
-  { id: 'egypt', name: 'Ancient Egypt', description: 'A majestic scene in Ancient Egypt, with the Great Pyramids and Sphinx in the background. dThe person is a noble or pharaoh with ornate gold jewelry.', image: 'https://picsum.photos/seed/egypt/800/600' },
+  { id: 'egypt', name: 'Ancient Egypt', description: 'A majestic scene in Ancient Egypt, with the Great Pyramids and Sphinx in the background. The person is a noble or pharaoh with ornate gold jewelry.', image: 'https://picsum.photos/seed/egypt/800/600' },
   { id: 'renaissance', name: 'Renaissance Italy', description: 'A lush balcony in 15th-century Florence. Dressed in rich velvet garments in the style of a Da Vinci portrait.', image: 'https://picsum.photos/seed/renaissance/800/600' },
   { id: 'victorian', name: 'Victorian London', description: 'A foggy street with gas lamps. Wearing a sophisticated top hat or a detailed corset dress.', image: 'https://picsum.photos/seed/victorian/800/600' },
   { id: 'cyberpunk', name: 'Neon Future', description: 'A rain-slicked cyberpunk street with towering neon signs. High-tech streetwear and cybernetic enhancements.', image: 'https://picsum.photos/seed/cyberpunk/800/600' },
