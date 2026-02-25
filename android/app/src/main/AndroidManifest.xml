@@ -11,7 +11,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.ChronosBooth">
         <activity
-            android:name=".ChronosActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="portrait">
             <intent-filter>
