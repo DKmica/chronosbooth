@@ -95,32 +95,39 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!photo || !selectedEraId) return;
-    
+
     const era = ERAS.find(e => e.id === selectedEraId);
     if (!era) return;
 
+    setIsProcessing(true);
     setState('generating');
     try {
-      const result = await transformToEra(photo, era.description);
+      const result = await transformToEra(photo, era.description, undefined, analysis || undefined);
+      if (!result) {
+        throw new Error('No image was returned from Gemini.');
+      }
       setResultImage(result);
       setState('result');
     } catch (err) {
       console.error(err);
       setState('era-select');
       alert("Generation failed. Please try again.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleManualEdit = async () => {
     if (!photo || !editPrompt) return;
-    
+
     setIsProcessing(true);
     try {
-      const result = await transformToEra(photo, "", editPrompt);
-      if (result) {
-        setResultImage(result);
-        setState('result');
+      const result = await transformToEra(photo, "", editPrompt, analysis || undefined);
+      if (!result) {
+        throw new Error('No image was returned from Gemini.');
       }
+      setResultImage(result);
+      setState('result');
     } catch (err) {
       console.error(err);
       alert("Edit failed. Please try again.");
@@ -328,9 +335,19 @@ export default function App() {
                           </div>
                           <div className="flex space-x-2">
                             <button 
-                              onClick={() => {
+                              onClick={async () => {
                                 setPhoto(photoItem.data);
                                 setState('era-select');
+                                setIsProcessing(true);
+                                try {
+                                  const result = await analyzeImage(photoItem.data);
+                                  setAnalysis(result);
+                                } catch (err) {
+                                  console.error(err);
+                                  setAnalysis('Analysis unavailable for this saved portrait. You can still generate an era transformation.');
+                                } finally {
+                                  setIsProcessing(false);
+                                }
                               }}
                               className="p-2 bg-emerald-500 text-black rounded-lg hover:bg-emerald-400 transition-colors"
                               title="Use this portrait"
