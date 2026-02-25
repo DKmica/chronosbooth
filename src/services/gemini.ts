@@ -1,9 +1,9 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 const getAI = () => {
-  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
   if (!apiKey) {
-    throw new Error("API Key not found. Please select an API key.");
+    throw new Error("Missing VITE_GEMINI_API_KEY in environment variables.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -30,33 +30,35 @@ export const analyzeImage = async (base64Image: string): Promise<string> => {
 };
 
 export const transformToEra = async (
-  base64Image: string,
-  eraDescription: string,
-  userPrompt?: string
+  originalImage: string,
+  prompt: string,
+  customPrompt?: string
 ): Promise<string | null> => {
   const ai = getAI();
-  const prompt = userPrompt 
-    ? `Edit this image based on this request: ${userPrompt}. Maintain the person's facial features but adapt them to the scene.`
-    : `Place the person in this photo into a highly detailed historical scene: ${eraDescription}. Ensure their face is clearly visible and naturally integrated into the scene. The person should be wearing era-appropriate clothing.`;
 
-  const response: GenerateContentResponse = await ai.models.generateContent({
+  const finalPrompt = customPrompt
+    ? `Edit this image based on this request: ${customPrompt}. Maintain the person's facial features but adapt them to the scene.`
+    : `Place the person in this photo into a highly detailed historical scene: ${prompt}. Ensure their face is clearly visible and naturally integrated into the scene. The person should be wearing era-appropriate clothing.`;
+
+  const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-image",
     contents: {
       parts: [
         {
           inlineData: {
             mimeType: "image/jpeg",
-            data: base64Image.split(",")[1] || base64Image,
+            data: originalImage.split(",")[1] || originalImage,
           },
         },
-        {
-          text: prompt,
-        },
+        { text: finalPrompt },
       ],
     },
   });
 
-  for (const part of response.candidates?.[0]?.content?.parts || []) {
+  const candidate = response.candidates?.[0];
+  const parts = candidate?.content?.parts;
+
+  for (const part of parts || []) {
     if (part.inlineData) {
       return `data:image/png;base64,${part.inlineData.data}`;
     }
@@ -65,131 +67,134 @@ export const transformToEra = async (
   return null;
 };
 
+// Alias for compatibility if needed elsewhere
+export const generateImage = transformToEra;
+
 export const ERAS = [
   {
-    id: "egypt",
-    name: "Ancient Egypt",
-    description: "A majestic scene in Ancient Egypt, with the Great Pyramids and Sphinx in the background under a golden sun. The person is dressed as a noble or pharaoh with ornate gold jewelry and linen robes.",
-    image: "https://picsum.photos/seed/egypt/800/600"
+    id: 'egypt',
+    name: 'Ancient Egypt',
+    description: 'A majestic scene in Ancient Egypt, with the Great Pyramids and Sphinx in the background under a golden sun. The person is dressed as a noble or pharaoh with ornate gold jewelry and linen robes.',
+    image: 'https://picsum.photos/seed/egypt/800/600',
   },
   {
-    id: "renaissance",
-    name: "Renaissance Italy",
-    description: "A lush balcony overlooking 15th-century Florence. The person is dressed in rich velvet garments, holding a quill or a lute, in the style of a Da Vinci portrait.",
-    image: "https://picsum.photos/seed/renaissance/800/600"
+    id: 'renaissance',
+    name: 'Renaissance Italy',
+    description: 'A lush balcony overlooking 15th-century Florence. The person is dressed in rich velvet garments, holding a quill or a lute, in the style of a Da Vinci portrait.',
+    image: 'https://picsum.photos/seed/renaissance/800/600',
   },
   {
-    id: "victorian",
-    name: "Victorian London",
-    description: "A foggy street in Victorian London with gas lamps and horse-drawn carriages. The person is wearing a sophisticated top hat or a detailed corset dress with lace.",
-    image: "https://picsum.photos/seed/victorian/800/600"
+    id: 'victorian',
+    name: 'Victorian London',
+    description: 'A foggy street in Victorian London with gas lamps and horse-drawn carriages. The person is wearing a sophisticated top hat or a detailed corset dress with lace.',
+    image: 'https://picsum.photos/seed/victorian/800/600',
   },
   {
-    id: "cyberpunk",
-    name: "Neon Future",
-    description: "A rain-slicked cyberpunk city street with towering neon signs and flying vehicles. The person has subtle cybernetic enhancements and high-tech streetwear.",
-    image: "https://picsum.photos/seed/cyberpunk/800/600"
+    id: 'cyberpunk',
+    name: 'Neon Future',
+    description: 'A rain-slicked cyberpunk city street with towering neon signs and flying vehicles. The person has subtle cybernetic enhancements and high-tech streetwear.',
+    image: 'https://picsum.photos/seed/cyberpunk/800/600',
   },
   {
-    id: "samurai",
-    name: "Feudal Japan",
-    description: "A serene cherry blossom garden with a traditional pagoda. The person is dressed in intricate samurai armor or a beautiful silk kimono.",
-    image: "https://picsum.photos/seed/samurai/800/600"
+    id: 'samurai',
+    name: 'Feudal Japan',
+    description: 'A serene cherry blossom garden with a traditional pagoda. The person is dressed in intricate samurai armor or a beautiful silk kimono.',
+    image: 'https://picsum.photos/seed/samurai/800/600',
   },
   {
-    id: "roaring20s",
-    name: "Roaring 20s",
-    description: "A vibrant jazz club in the 1920s. The person is dressed in a sharp tuxedo or a flapper dress with sequins and feathers, surrounded by Art Deco decor.",
-    image: "https://picsum.photos/seed/jazz/800/600"
+    id: 'roaring20s',
+    name: 'Roaring 20s',
+    description: 'A vibrant jazz club in the 1920s. The person is dressed in a sharp tuxedo or a flapper dress with sequins and feathers, surrounded by Art Deco decor.',
+    image: 'https://picsum.photos/seed/jazz/800/600',
   },
   {
-    id: "viking",
-    name: "Viking Age",
-    description: "A rugged Nordic fjord during the Viking Age, with majestic longships anchored in the misty water and snow-capped mountains in the distance. The person is dressed in authentic Viking attire, featuring thick furs, leather tunics, and intricate iron jewelry, looking like a brave explorer.",
-    image: "https://picsum.photos/seed/viking/800/600"
+    id: 'viking',
+    name: 'Viking Age',
+    description: 'A rugged Nordic fjord during the Viking Age, with majestic longships anchored in the misty water and snow-capped mountains in the distance. The person is dressed in authentic Viking attire, featuring thick furs, leather tunics, and intricate iron jewelry, looking like a brave explorer.',
+    image: 'https://picsum.photos/seed/viking/800/600',
   },
   {
-    id: "maya",
-    name: "Ancient Maya",
-    description: "A lush, vibrant jungle in the heart of the Mayan civilization, with a towering stone step-pyramid rising above the canopy. The person is adorned in ceremonial Mayan regalia, including a magnificent feathered headdress, jade necklaces, and colorful woven textiles.",
-    image: "https://picsum.photos/seed/maya/800/600"
+    id: 'maya',
+    name: 'Ancient Maya',
+    description: 'A lush, vibrant jungle in the heart of the Mayan civilization, with a towering stone step-pyramid rising above the canopy. The person is adorned in ceremonial Mayan regalia, including a magnificent feathered headdress, jade necklaces, and colorful woven textiles.',
+    image: 'https://picsum.photos/seed/maya/800/600',
   },
   {
-    id: "wildwest",
-    name: "Wild West",
-    description: "A dusty frontier town in the American Wild West during the late 19th century, with wooden saloons and hitching posts along a dirt road. The person is dressed as a classic gunslinger or pioneer, wearing a weathered leather duster, a wide-brimmed Stetson hat, and rugged denim.",
-    image: "https://picsum.photos/seed/wildwest/800/600"
+    id: 'wildwest',
+    name: 'Wild West',
+    description: 'A dusty frontier town in the American Wild West during the late 19th century, with wooden saloons and hitching posts along a dirt road. The person is dressed as a classic gunslinger or pioneer, wearing a weathered leather duster, a wide-brimmed Stetson hat, and rugged denim.',
+    image: 'https://picsum.photos/seed/wildwest/800/600',
   },
   {
-    id: "greece",
-    name: "Ancient Greece",
-    description: "The sun-drenched Acropolis of Athens with white marble columns and olive trees. The person is wearing a flowing white chiton with gold embroidery and a laurel wreath.",
-    image: "https://picsum.photos/seed/greece/800/600"
+    id: 'greece',
+    name: 'Ancient Greece',
+    description: 'The sun-drenched Acropolis of Athens with white marble columns and olive trees. The person is wearing a flowing white chiton with gold embroidery and a laurel wreath.',
+    image: 'https://picsum.photos/seed/greece/800/600',
   },
   {
-    id: "pirate",
-    name: "Age of Piracy",
-    description: "A tropical Caribbean cove with a massive wooden galleon anchored nearby. The person is dressed as a pirate captain with a tricorn hat, leather boots, and a weathered coat.",
-    image: "https://picsum.photos/seed/pirate/800/600"
+    id: 'pirate',
+    name: 'Age of Piracy',
+    description: 'A tropical Caribbean cove with a massive wooden galleon anchored nearby. The person is dressed as a pirate captain with a tricorn hat, leather boots, and a weathered coat.',
+    image: 'https://picsum.photos/seed/pirate/800/600',
   },
   {
-    id: "medieval",
-    name: "Medieval Knight",
-    description: "A grand stone castle courtyard during a tournament. The person is wearing shining plate armor with a colorful surcoat and holding a ceremonial sword.",
-    image: "https://picsum.photos/seed/knight/800/600"
+    id: 'medieval',
+    name: 'Medieval Knight',
+    description: 'A grand stone castle courtyard during a tournament. The person is wearing shining plate armor with a colorful surcoat and holding a ceremonial sword.',
+    image: 'https://picsum.photos/seed/knight/800/600',
   },
   {
-    id: "spaceage",
-    name: "Retro Space Age",
-    description: "A 1950s vision of the future on a moon base. The person is wearing a silver jumpsuit with bubble helmet, surrounded by analog computers and sleek rockets.",
-    image: "https://picsum.photos/seed/space/800/600"
+    id: 'spaceage',
+    name: 'Retro Space Age',
+    description: 'A 1950s vision of the future on a moon base. The person is wearing a silver jumpsuit with bubble helmet, surrounded by analog computers and sleek rockets.',
+    image: 'https://picsum.photos/seed/space/800/600',
   },
   {
-    id: "woodstock",
-    name: "1960s Psychedelia",
-    description: "A vibrant music festival field with colorful vans and peace signs. The person is wearing tie-dye clothing, round sunglasses, and a headband.",
-    image: "https://picsum.photos/seed/hippie/800/600"
+    id: 'woodstock',
+    name: '1960s Psychedelia',
+    description: 'A vibrant music festival field with colorful vans and peace signs. The person is wearing tie-dye clothing, round sunglasses, and a headband.',
+    image: 'https://picsum.photos/seed/hippie/800/600',
   },
   {
-    id: "prehistoric",
-    name: "Prehistoric Era",
-    description: "A prehistoric landscape with massive ferns and a distant volcano. The person is dressed in primitive furs and carrying a stone tool, in a cinematic dawn-of-man style.",
-    image: "https://picsum.photos/seed/caveman/800/600"
+    id: 'prehistoric',
+    name: 'Prehistoric Era',
+    description: 'A prehistoric landscape with massive ferns and a distant volcano. The person is dressed in primitive furs and carrying a stone tool, in a cinematic dawn-of-man style.',
+    image: 'https://picsum.photos/seed/caveman/800/600',
   },
   {
-    id: "noir",
-    name: "Film Noir",
-    description: "A shadowy detective office in 1940s Los Angeles, with venetian blinds casting stripes of light. The person is dressed as a private investigator in a trench coat and fedora, or a femme fatale in an elegant evening gown.",
-    image: "https://picsum.photos/seed/noir/800/600"
+    id: 'noir',
+    name: 'Film Noir',
+    description: 'A shadowy detective office in 1940s Los Angeles, with venetian blinds casting stripes of light. The person is dressed as a private investigator in a trench coat and fedora, or a femme fatale in an elegant evening gown.',
+    image: 'https://picsum.photos/seed/noir/800/600',
   },
   {
-    id: "steampunk",
-    name: "Steampunk Workshop",
-    description: "A cluttered Victorian workshop filled with brass gears, steam pipes, and ticking clocks. The person is an inventor wearing goggles, a leather apron, and mechanical gauntlets.",
-    image: "https://picsum.photos/seed/steampunk/800/600"
+    id: 'steampunk',
+    name: 'Steampunk Workshop',
+    description: 'A cluttered Victorian workshop filled with brass gears, steam pipes, and ticking clocks. The person is an inventor wearing goggles, a leather apron, and mechanical gauntlets.',
+    image: 'https://picsum.photos/seed/steampunk/800/600',
   },
   {
-    id: "atlantis",
-    name: "Lost City of Atlantis",
-    description: "An underwater city with glowing bioluminescent plants and ancient ruins. The person is dressed in ethereal, flowing garments made of sea silk and adorned with pearls and coral.",
-    image: "https://picsum.photos/seed/atlantis/800/600"
+    id: 'atlantis',
+    name: 'Lost City of Atlantis',
+    description: 'An underwater city with glowing bioluminescent plants and ancient ruins. The person is dressed in ethereal, flowing garments made of sea silk and adorned with pearls and coral.',
+    image: 'https://picsum.photos/seed/atlantis/800/600',
   },
   {
-    id: "mars",
-    name: "Mars Colony 2150",
-    description: "A futuristic colony on the red planet, with biodomes and rovers in the background. The person is wearing a sleek, high-tech spacesuit designed for exploration.",
-    image: "https://picsum.photos/seed/mars/800/600"
+    id: 'mars',
+    name: 'Mars Colony 2150',
+    description: 'A futuristic colony on the red planet, with biodomes and rovers in the background. The person is wearing a sleek, high-tech spacesuit designed for exploration.',
+    image: 'https://picsum.photos/seed/mars/800/600',
   },
   {
-    id: "disco",
-    name: "Disco Fever",
-    description: "A dazzling 1970s disco dance floor with a mirror ball and colorful lights. The person is wearing a sequined jumpsuit or bell-bottoms and platform shoes, ready to dance.",
-    image: "https://picsum.photos/seed/disco/800/600"
+    id: 'disco',
+    name: 'Disco Fever',
+    description: 'A dazzling 1970s disco dance floor with a mirror ball and colorful lights. The person is wearing a sequined jumpsuit or bell-bottoms and platform shoes, ready to dance.',
+    image: 'https://picsum.photos/seed/disco/800/600',
   },
   {
-    id: "frenchrev",
-    name: "French Revolution",
-    description: "A chaotic street scene in 18th-century Paris, with barricades and tricolor flags. The person is dressed as a revolutionary with a cockade hat and simple clothes, or an aristocrat in fine silks.",
-    image: "https://picsum.photos/seed/revolution/800/600"
-  }
+    id: 'frenchrev',
+    name: 'French Revolution',
+    description: 'A chaotic street scene in 18th-century Paris, with barricades and tricolor flags. The person is dressed as a revolutionary with a cockade hat and simple clothes, or an aristocrat in fine silks.',
+    image: 'https://picsum.photos/seed/revolution/800/600',
+  },
 ];
