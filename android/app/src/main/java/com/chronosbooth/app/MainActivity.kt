@@ -2,144 +2,220 @@ package com.chronosbooth.app
 
 import android.Manifest
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.util.Base64
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.*
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.activity.viewModels
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
-import kotlinx.coroutines.launch
-
-val ChronosBlack = Color(0xFF0A0502)
-val ChronosEmerald = Color(0xFF10B981)
-
-val HISTORICAL_ERAS = listOf(
-    Era("egypt", "Ancient Egypt", "Majestic pyramids and pharaoh robes.", "https://picsum.photos/seed/egypt/800/600"),
-    Era("cyberpunk", "Neon Future", "Cybernetic enhancements and neon lights.", "https://picsum.photos/seed/cyberpunk/800/600"),
-    Era("viking", "Viking Age", "Rugged fjords and thick furs.", "https://picsum.photos/seed/viking/800/600"),
-    Era("renaissance", "Renaissance", "Lush balconies and velvet garments.", "https://picsum.photos/seed/renaissance/800/600")
-)
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chronosbooth.app.ui.theme.ChronosBoothTheme
 
 class MainActivity : ComponentActivity() {
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted -> if (!isGranted) finish() }
+    private val viewModel: ChronosViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
+        enableEdgeToEdge()
         setContent {
-            MaterialTheme {
-                ChronosBoothApp()
+            ChronosBoothTheme {
+                ChronosBoothApp(viewModel)
             }
         }
     }
 }
 
 @Composable
-fun ChronosBoothApp() {
-    val scope = rememberCoroutineScope()
-    var appState by remember { mutableStateOf("landing") }
-    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var manifestationResult by remember { mutableStateOf<String?>(null) }
+private fun ChronosBoothApp(viewModel: ChronosViewModel) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val snackBarHost = remember { SnackbarHostState() }
 
-    // Use gemini-1.5-flash for stable image processing
-    val apiKey = "AIzaSyB8XZONysobdhZC3SFke6FH1TDO7r-uVPI"
-    val model = remember { GenerativeModel("gemini-1.5-flash", apiKey) }
-
-    Box(modifier = Modifier.fillMaxSize().background(ChronosBlack)) {
-        when (appState) {
-            "landing" -> LandingScreen { appState = "capture" }
-            "capture" -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Button(onClick = { /* Placeholder capture logic */ appState = "era-select" }) {
-                    Text("Capture Portrait")
-                }
-            }
-            "era-select" -> EraSelectorScreen(HISTORICAL_ERAS) { era ->
-                appState = "manifesting"
-                scope.launch {
-                    try {
-                        val result = model.generateContent(content {
-                            // Ensure image logic is handled if bitmap is provided
-                            text("Transform into era: ${era.name}. ${era.description}")
-                        }).text
-                        manifestationResult = result
-                        appState = "result"
-                    } catch (e: Exception) {
-                        manifestationResult = "TEMPORAL DISRUPTION: ${e.message}"
-                        appState = "result"
-                    }
-                }
-            }
-            "manifesting" -> LoadingScreen("Weaving Reality...")
-            "result" -> ResultScreen(manifestationResult) { appState = "landing" }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            viewModel.openCamera()
+        } else {
+            viewModel.onError("Camera permission denied.")
         }
     }
-}
 
-@Composable
-fun LandingScreen(onStart: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text("CHRONOS", style = MaterialTheme.typography.displayLarge, color = Color.White, fontWeight = FontWeight.Bold)
-        Text("BOOTH", style = MaterialTheme.typography.displayMedium, color = ChronosEmerald)
-        Spacer(Modifier.height(48.dp))
-        Button(onClick = onStart, colors = ButtonDefaults.buttonColors(containerColor = ChronosEmerald)) {
-            Text("BEGIN JOURNEY", color = Color.Black)
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap: Bitmap? ->
+        if (bitmap != null) {
+            viewModel.setSourceImage(bitmap)
         }
     }
-}
 
-@Composable
-fun EraSelectorScreen(eras: List<Era>, onSelected: (Era) -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Select Era", style = MaterialTheme.typography.headlineMedium, color = Color.White)
-        Spacer(Modifier.height(16.dp))
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openInputStream(uri).use { input ->
+                BitmapFactory.decodeStream(input)
+            }
+        }.onSuccess { bmp ->
+            if (bmp != null) {
+                viewModel.setSourceImage(bmp)
+            } else {
+                viewModel.onError("Could not decode selected image.")
+            }
+        }.onFailure {
+            viewModel.onError("Could not open selected image.")
+        }
+    }
+
+    LaunchedEffect(uiState.pendingCameraOpen) {
+        if (uiState.pendingCameraOpen) {
+            cameraLauncher.launch(null)
+            viewModel.consumeCameraOpen()
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage) {
+        uiState.errorMessage?.let {
+            snackBarHost.showSnackbar(it)
+            viewModel.consumeError()
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(hostState = snackBarHost) }) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            items(eras) { era ->
-                Card(modifier = Modifier.clickable { onSelected(era) }.aspectRatio(1f)) {
-                    Box {
-                        AsyncImage(model = era.image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        Text(era.name, modifier = Modifier.align(Alignment.BottomStart).padding(8.dp), color = Color.White)
+            Text("Chronos Booth", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Text("Capture or upload a portrait, select an era, then generate a transformed image.")
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }, modifier = Modifier.weight(1f)) {
+                    Text("Capture")
+                }
+                OutlinedButton(onClick = { galleryLauncher.launch("image/*") }, modifier = Modifier.weight(1f)) {
+                    Text("Upload")
+                }
+            }
+
+            uiState.sourceBitmap?.let { bitmap ->
+                Card {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Source portrait",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(230.dp)
+                    )
+                }
+            }
+
+            Text("Choose era")
+            Era.values().forEach { era ->
+                OutlinedButton(
+                    onClick = { viewModel.selectEra(era) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(if (uiState.selectedEra == era) "✓ ${era.label}" else era.label)
+                }
+            }
+
+            Button(
+                onClick = { viewModel.generateChronosImage() },
+                enabled = !uiState.isGenerating && uiState.sourceBitmap != null && uiState.selectedEra != null,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (uiState.isGenerating) "Generating..." else "Analyze + Generate")
+            }
+
+            if (uiState.isGenerating) {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                }
+            }
+
+            uiState.analysisText?.let {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("AI analysis", fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(it)
+                    }
+                }
+            }
+
+            uiState.generatedImageBase64?.let { encoded ->
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                val generatedBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                if (generatedBitmap != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        Image(
+                            bitmap = generatedBitmap.asImageBitmap(),
+                            contentDescription = "Generated image",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(280.dp)
+                        )
+                    }
+                }
+            }
+
+            uiState.generatedTextFallback?.let {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Generation response", fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(it)
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-fun LoadingScreen(msg: String) {
-    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        CircularProgressIndicator(color = ChronosEmerald)
-        Text(msg, color = Color.White, modifier = Modifier.padding(top = 16.dp))
-    }
-}
-
-@Composable
-fun ResultScreen(result: String?, onReset: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
-        Text("Manifestation", color = ChronosEmerald, style = MaterialTheme.typography.headlineLarge)
-        Text(result ?: "Error", color = Color.White)
-        Button(onClick = onReset, modifier = Modifier.padding(top = 32.dp)) { Text("New Journey") }
     }
 }
