@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ANALYSIS_MODEL = "gemini-1.5-pro"; 
-const TRANSFORMATION_MODEL = "gemini-1.5-flash";
+const ANALYSIS_MODEL = "gemini-2.0-flash";
+const TRANSFORMATION_MODEL = "gemini-2.0-flash-preview-image-generation";
 
 declare global {
   interface Window {
@@ -17,7 +17,19 @@ declare global {
 const getAI = () => {
   // Vite environment variables check
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
-  return apiKey ? new GoogleGenAI(apiKey) : null;
+  return apiKey ? new GoogleGenAI({ apiKey }) : null;
+};
+
+const extractImageDataUrl = (response: Awaited<ReturnType<GoogleGenAI['models']['generateContent']>>): string | null => {
+  const parts = response.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = parts.find((part) => !!part.inlineData?.data);
+
+  if (!imagePart?.inlineData?.data) {
+    return null;
+  }
+
+  const mimeType = imagePart.inlineData.mimeType || 'image/png';
+  return `data:${mimeType};base64,${imagePart.inlineData.data}`;
 };
 
 export const analyzeImage = async (base64Image: string): Promise<string> => {
@@ -48,12 +60,18 @@ export const analyzeImage = async (base64Image: string): Promise<string> => {
   if (!ai) return "API Key not configured.";
 
   try {
-    const model = ai.getGenerativeModel({ model: ANALYSIS_MODEL });
-    const result = await model.generateContent([
-      "Analyze this person in detail: facial structure, expression, hair, and clothing. Return a rich identity description optimized for likeness preservation.",
-      { inlineData: { mimeType: "image/jpeg", data: base64Image.split(",")[1] || base64Image } }
-    ]);
-    return result.response.text();
+    const result = await ai.models.generateContent({
+      model: ANALYSIS_MODEL,
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: 'Analyze this person in detail: facial structure, expression, hair, and clothing. Return a rich identity description optimized for likeness preservation.' },
+          { inlineData: { mimeType: 'image/jpeg', data: base64Image.split(',')[1] || base64Image } }
+        ]
+      }]
+    });
+
+    return result.text || 'Analysis unavailable in browser.';
   } catch (error) {
     console.error("Web analysis failed", error);
     return "Analysis unavailable in browser.";
@@ -87,20 +105,27 @@ export const transformToEra = async (
 
   // --- WEB FALLBACK PATH ---
   const ai = getAI();
-  if (!ai) return originalImage;
+  if (!ai) return null;
 
   try {
-    const model = ai.getGenerativeModel({ model: TRANSFORMATION_MODEL });
     const fullTextPrompt = `Transform this portrait: ${finalPrompt}. Identity Analysis: ${subjectAnalysis}. Keep face structure, change clothing and background to match the era.`;
-    
-    const result = await model.generateContent([
-      fullTextPrompt,
-      { inlineData: { mimeType: "image/jpeg", data: originalImage.split(",")[1] || originalImage } }
-    ]);
-    return result.response.text(); 
+
+    const result = await ai.models.generateContent({
+      model: TRANSFORMATION_MODEL,
+      config: { responseModalities: ['TEXT', 'IMAGE'] },
+      contents: [{
+        role: 'user',
+        parts: [
+          { text: `${fullTextPrompt} Return only the edited image.` },
+          { inlineData: { mimeType: 'image/jpeg', data: originalImage.split(',')[1] || originalImage } }
+        ]
+      }]
+    });
+
+    return extractImageDataUrl(result);
   } catch (error) {
     console.error("Web transformation failed", error);
-    return originalImage;
+    return null;
   }
 };
 
