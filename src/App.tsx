@@ -62,16 +62,19 @@ export default function App() {
   }, []);
 
   const savePhoto = (data: string) => {
-    const newPhoto: SavedPhoto = {
-      id: crypto.randomUUID(),
-      data,
-      date: new Date().toLocaleString()
-    };
-    const updated = [newPhoto, ...savedPhotos].slice(0, 12); // Limit to 12 photos
-    setSavedPhotos(updated);
-    localStorage.setItem('chronos_saved_portraits', JSON.stringify(updated));
-    alert("Portrait saved to your local gallery!");
+  const newPhoto: SavedPhoto = {
+    // Robust fallback for non-secure contexts (WebView)
+    id: typeof crypto.randomUUID === 'function' 
+        ? crypto.randomUUID() 
+        : Math.random().toString(36).substring(2) + Date.now().toString(36),
+    data,
+    date: new Date().toLocaleString()
   };
+  const updated = [newPhoto, ...savedPhotos].slice(0, 12);
+  setSavedPhotos(updated);
+  localStorage.setItem('chronos_saved_portraits', JSON.stringify(updated));
+  alert("Portrait saved to temporal records!");
+};
 
   const deletePhoto = (id: string) => {
     const updated = savedPhotos.filter(p => p.id !== id);

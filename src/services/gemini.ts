@@ -1,53 +1,58 @@
-import { GoogleGenAI, GenerateContentResponse, Part } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
-const getAI = (): GoogleGenAI | null => {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
-  if (!apiKey) {
-    return null;
+const ANALYSIS_MODEL = "gemini-1.5-pro"; 
+const TRANSFORMATION_MODEL = "gemini-1.5-flash";
+
+declare global {
+  interface Window {
+    ChronosAndroid?: {
+      analyzeImage: (base64: string, callbackId: string) => void;
+      transformToEra: (base64: string, era: string, callbackId: string) => void;
+    };
+    onAnalysisResult?: (id: string, result: string) => void;
+    onTransformationResult?: (id: string, result: string) => void;
   }
-  return new GoogleGenAI({ apiKey });
-};
+}
 
-const getResponseText = (response: GenerateContentResponse): string | null => {
-  if (response.text) return response.text;
-
-  const parts = response.candidates?.[0]?.content?.parts;
-  const textParts = (parts || [])
-    .filter((part: Part) => typeof part.text === "string")
-    .map((part: Part) => part.text?.trim())
-    .filter(Boolean);
-
-  return textParts.length ? textParts.join("\n") : null;
+const getAI = () => {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_API_KEY;
+  return apiKey ? new GoogleGenAI(apiKey) : null;
 };
 
 export const analyzeImage = async (base64Image: string): Promise<string> => {
-  const ai = getAI();
-  if (!ai) {
-    return "Portrait captured. API key not configured, so automatic multimodal identity analysis is unavailable.";
+  // Check if we are running in the Android Wrapper
+  if (window.ChronosAndroid) {
+    return new Promise((resolve) => {
+      const callbackId = `analyze_${Date.now()}`;
+      
+      // Explicitly attach the listener to the window object
+      // This is what the Android side calls via evaluateJavascript
+      window.onAnalysisResult = (id: string, result: string) => {
+        if (id === callbackId) {
+          resolve(result);
+          // Clean up to prevent memory leaks
+          delete window.onAnalysisResult;
+        }
+      };
+
+      // Trigger the native Android AI SDK
+      window.ChronosAndroid.analyzeImage(base64Image, callbackId);
+    });
   }
 
-  try {
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: base64Image.split(",")[1] || base64Image,
-            },
-          },
-          {
-            text: "Analyze this person in detail: facial structure and distinguishing features, expression, pose/body orientation, hair, and clothing. Return a concise but rich identity description optimized for preserving this exact person's likeness during historical image-to-image transformations.",
-          },
-        ],
-      },
-    });
+  const ai = getAI();
+  if (!ai) return "API Key not configured.";
 
-    return getResponseText(response) || "No analysis available.";
+  try {
+    const model = ai.getGenerativeModel({ model: ANALYSIS_MODEL });
+    const result = await model.generateContent([
+      "Analyze this person in detail: facial structure, expression, hair, and clothing. Return a rich description for likeness preservation.",
+      { inlineData: { mimeType: "image/jpeg", data: base64Image.split(",")[1] || base64Image } }
+    ]);
+    return result.response.text();
   } catch (error) {
-    console.error("analyzeImage failed", error);
-    return "Analysis failed. You can still generate transformations; likeness preservation may be reduced.";
+    console.error("Analysis failed", error);
+    return "Analysis unavailable.";
   }
 };
 
@@ -57,188 +62,61 @@ export const transformToEra = async (
   customPrompt?: string,
   subjectAnalysis?: string
 ): Promise<string | null> => {
-  const ai = getAI();
+  const finalPrompt = customPrompt || prompt;
 
-  if (!ai) {
-    console.warn("Gemini API key missing; returning source image for manifest preview.");
-    return originalImage;
+  if (window.ChronosAndroid) {
+    return new Promise((resolve) => {
+      const callbackId = `transform_${Date.now()}`;
+      
+      window.onTransformationResult = (id: string, result: string) => {
+        if (id === callbackId) {
+          resolve(result);
+          delete window.onTransformationResult;
+        }
+      };
+
+      window.ChronosAndroid.transformToEra(originalImage, finalPrompt, callbackId);
+    });
   }
 
-  const finalPrompt = customPrompt
-    ? `Edit this image based on this request: ${customPrompt}. Preserve the same person's identity using this reference analysis: ${subjectAnalysis || "No prior analysis provided."} Keep facial features, expression, and pose coherent unless explicitly requested otherwise.`
-    : `Transform this portrait into the following era: ${prompt}. Use image-to-image editing to preserve the core facial structure and identity from the source person. Identity reference: ${subjectAnalysis || "No prior analysis provided."}. Replace the background, lighting, and attire to match the era naturally, while keeping the person clearly recognizable.`;
-
-  let response: GenerateContentResponse;
+  const ai = getAI();
+  if (!ai) return originalImage;
 
   try {
-    response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-image",
-      config: {
-        responseModalities: ["IMAGE", "TEXT"],
-      },
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: originalImage.split(",")[1] || originalImage,
-            },
-          },
-          { text: finalPrompt },
-        ],
-      },
-    });
+    const model = ai.getGenerativeModel({ model: TRANSFORMATION_MODEL });
+    const fullTextPrompt = `Transform this portrait: ${finalPrompt}. Identity: ${subjectAnalysis}. Preserve face, change background and attire.`;
+    
+    const result = await model.generateContent([
+      fullTextPrompt,
+      { inlineData: { mimeType: "image/jpeg", data: originalImage.split(",")[1] } }
+    ]);
+    return result.response.text(); 
   } catch (error) {
-    console.error("transformToEra failed", error);
+    console.error("Transformation failed", error);
     return originalImage;
   }
-
-  const candidate = response.candidates?.[0];
-  const parts = candidate?.content?.parts;
-
-  for (const part of parts || []) {
-    if (part.inlineData?.data) {
-      const mimeType = part.inlineData.mimeType || "image/png";
-      return `data:${mimeType};base64,${part.inlineData.data}`;
-    }
-  }
-
-  const textResponse = getResponseText(response);
-  if (textResponse) {
-    console.warn("Image generation returned text without an image:", textResponse);
-  }
-
-  return null;
 };
 
-// Alias for compatibility if needed elsewhere
-export const generateImage = transformToEra;
-
 export const ERAS = [
-  {
-    id: 'egypt',
-    name: 'Ancient Egypt',
-    description: 'A majestic scene in Ancient Egypt, with the Great Pyramids and Sphinx in the background under a golden sun. The person is dressed as a noble or pharaoh with ornate gold jewelry and linen robes.',
-    image: 'https://picsum.photos/seed/egypt/800/600',
-  },
-  {
-    id: 'renaissance',
-    name: 'Renaissance Italy',
-    description: 'A lush balcony overlooking 15th-century Florence. The person is dressed in rich velvet garments, holding a quill or a lute, in the style of a Da Vinci portrait.',
-    image: 'https://picsum.photos/seed/renaissance/800/600',
-  },
-  {
-    id: 'victorian',
-    name: 'Victorian London',
-    description: 'A foggy street in Victorian London with gas lamps and horse-drawn carriages. The person is wearing a sophisticated top hat or a detailed corset dress with lace.',
-    image: 'https://picsum.photos/seed/victorian/800/600',
-  },
-  {
-    id: 'cyberpunk',
-    name: 'Neon Future',
-    description: 'A rain-slicked cyberpunk city street with towering neon signs and flying vehicles. The person has subtle cybernetic enhancements and high-tech streetwear.',
-    image: 'https://picsum.photos/seed/cyberpunk/800/600',
-  },
-  {
-    id: 'samurai',
-    name: 'Feudal Japan',
-    description: 'A serene cherry blossom garden with a traditional pagoda. The person is dressed in intricate samurai armor or a beautiful silk kimono.',
-    image: 'https://picsum.photos/seed/samurai/800/600',
-  },
-  {
-    id: 'roaring20s',
-    name: 'Roaring 20s',
-    description: 'A vibrant jazz club in the 1920s. The person is dressed in a sharp tuxedo or a flapper dress with sequins and feathers, surrounded by Art Deco decor.',
-    image: 'https://picsum.photos/seed/jazz/800/600',
-  },
-  {
-    id: 'viking',
-    name: 'Viking Age',
-    description: 'A rugged Nordic fjord during the Viking Age, with majestic longships anchored in the misty water and snow-capped mountains in the distance. The person is dressed in authentic Viking attire, featuring thick furs, leather tunics, and intricate iron jewelry, looking like a brave explorer.',
-    image: 'https://picsum.photos/seed/viking/800/600',
-  },
-  {
-    id: 'maya',
-    name: 'Ancient Maya',
-    description: 'A lush, vibrant jungle in the heart of the Mayan civilization, with a towering stone step-pyramid rising above the canopy. The person is adorned in ceremonial Mayan regalia, including a magnificent feathered headdress, jade necklaces, and colorful woven textiles.',
-    image: 'https://picsum.photos/seed/maya/800/600',
-  },
-  {
-    id: 'wildwest',
-    name: 'Wild West',
-    description: 'A dusty frontier town in the American Wild West during the late 19th century, with wooden saloons and hitching posts along a dirt road. The person is dressed as a classic gunslinger or pioneer, wearing a weathered leather duster, a wide-brimmed Stetson hat, and rugged denim.',
-    image: 'https://picsum.photos/seed/wildwest/800/600',
-  },
-  {
-    id: 'greece',
-    name: 'Ancient Greece',
-    description: 'The sun-drenched Acropolis of Athens with white marble columns and olive trees. The person is wearing a flowing white chiton with gold embroidery and a laurel wreath.',
-    image: 'https://picsum.photos/seed/greece/800/600',
-  },
-  {
-    id: 'pirate',
-    name: 'Age of Piracy',
-    description: 'A tropical Caribbean cove with a massive wooden galleon anchored nearby. The person is dressed as a pirate captain with a tricorn hat, leather boots, and a weathered coat.',
-    image: 'https://picsum.photos/seed/pirate/800/600',
-  },
-  {
-    id: 'medieval',
-    name: 'Medieval Knight',
-    description: 'A grand stone castle courtyard during a tournament. The person is wearing shining plate armor with a colorful surcoat and holding a ceremonial sword.',
-    image: 'https://picsum.photos/seed/knight/800/600',
-  },
-  {
-    id: 'spaceage',
-    name: 'Retro Space Age',
-    description: 'A 1950s vision of the future on a moon base. The person is wearing a silver jumpsuit with bubble helmet, surrounded by analog computers and sleek rockets.',
-    image: 'https://picsum.photos/seed/space/800/600',
-  },
-  {
-    id: 'woodstock',
-    name: '1960s Psychedelia',
-    description: 'A vibrant music festival field with colorful vans and peace signs. The person is wearing tie-dye clothing, round sunglasses, and a headband.',
-    image: 'https://picsum.photos/seed/hippie/800/600',
-  },
-  {
-    id: 'prehistoric',
-    name: 'Prehistoric Era',
-    description: 'A prehistoric landscape with massive ferns and a distant volcano. The person is dressed in primitive furs and carrying a stone tool, in a cinematic dawn-of-man style.',
-    image: 'https://picsum.photos/seed/caveman/800/600',
-  },
-  {
-    id: 'noir',
-    name: 'Film Noir',
-    description: 'A shadowy detective office in 1940s Los Angeles, with venetian blinds casting stripes of light. The person is dressed as a private investigator in a trench coat and fedora, or a femme fatale in an elegant evening gown.',
-    image: 'https://picsum.photos/seed/noir/800/600',
-  },
-  {
-    id: 'steampunk',
-    name: 'Steampunk Workshop',
-    description: 'A cluttered Victorian workshop filled with brass gears, steam pipes, and ticking clocks. The person is an inventor wearing goggles, a leather apron, and mechanical gauntlets.',
-    image: 'https://picsum.photos/seed/steampunk/800/600',
-  },
-  {
-    id: 'atlantis',
-    name: 'Lost City of Atlantis',
-    description: 'An underwater city with glowing bioluminescent plants and ancient ruins. The person is dressed in ethereal, flowing garments made of sea silk and adorned with pearls and coral.',
-    image: 'https://picsum.photos/seed/atlantis/800/600',
-  },
-  {
-    id: 'mars',
-    name: 'Mars Colony 2150',
-    description: 'A futuristic colony on the red planet, with biodomes and rovers in the background. The person is wearing a sleek, high-tech spacesuit designed for exploration.',
-    image: 'https://picsum.photos/seed/mars/800/600',
-  },
-  {
-    id: 'disco',
-    name: 'Disco Fever',
-    description: 'A dazzling 1970s disco dance floor with a mirror ball and colorful lights. The person is wearing a sequined jumpsuit or bell-bottoms and platform shoes, ready to dance.',
-    image: 'https://picsum.photos/seed/disco/800/600',
-  },
-  {
-    id: 'frenchrev',
-    name: 'French Revolution',
-    description: 'A chaotic street scene in 18th-century Paris, with barricades and tricolor flags. The person is dressed as a revolutionary with a cockade hat and simple clothes, or an aristocrat in fine silks.',
-    image: 'https://picsum.photos/seed/revolution/800/600',
-  },
+  { id: 'egypt', name: 'Ancient Egypt', description: 'A majestic scene in Ancient Egypt, with the Great Pyramids and Sphinx in the background. dThe person is a noble or pharaoh with ornate gold jewelry.', image: 'https://picsum.photos/seed/egypt/800/600' },
+  { id: 'renaissance', name: 'Renaissance Italy', description: 'A lush balcony in 15th-century Florence. Dressed in rich velvet garments in the style of a Da Vinci portrait.', image: 'https://picsum.photos/seed/renaissance/800/600' },
+  { id: 'victorian', name: 'Victorian London', description: 'A foggy street with gas lamps. Wearing a sophisticated top hat or a detailed corset dress.', image: 'https://picsum.photos/seed/victorian/800/600' },
+  { id: 'cyberpunk', name: 'Neon Future', description: 'A rain-slicked cyberpunk street with towering neon signs. High-tech streetwear and cybernetic enhancements.', image: 'https://picsum.photos/seed/cyberpunk/800/600' },
+  { id: 'samurai', name: 'Feudal Japan', description: 'A serene cherry blossom garden with a traditional pagoda. Dressed in samurai armor or a silk kimono.', image: 'https://picsum.photos/seed/samurai/800/600' },
+  { id: 'roaring20s', name: 'Roaring 20s', description: 'A vibrant jazz club. Dressed in a sharp tuxedo or a flapper dress with sequins and feathers.', image: 'https://picsum.photos/seed/jazz/800/600' },
+  { id: 'viking', name: 'Viking Age', description: 'A rugged Nordic fjord with majestic longships. Dressed in thick furs, leather tunics, and iron jewelry.', image: 'https://picsum.photos/seed/viking/800/600' },
+  { id: 'maya', name: 'Ancient Maya', description: 'A lush jungle with stone pyramids. Adorned in ceremonial regalia with a feathered headdress and jade.', image: 'https://picsum.photos/seed/maya/800/600' },
+  { id: 'wildwest', name: 'Wild West', description: 'A dusty frontier town. Dressed as a gunslinger with a leather duster and Stetson hat.', image: 'https://picsum.photos/seed/wildwest/800/600' },
+  { id: 'greece', name: 'Ancient Greece', description: 'The sun-drenched Acropolis. Wearing a white chiton with gold embroidery and a laurel wreath.', image: 'https://picsum.photos/seed/greece/800/600' },
+  { id: 'pirate', name: 'Age of Piracy', description: 'A Caribbean cove with a wooden galleon. Dressed as a pirate captain with a tricorn hat.', image: 'https://picsum.photos/seed/pirate/800/600' },
+  { id: 'medieval', name: 'Medieval Knight', description: 'A stone castle courtyard. Wearing shining plate armor and holding a ceremonial sword.', image: 'https://picsum.photos/seed/knight/800/600' },
+  { id: 'spaceage', name: 'Retro Space Age', description: 'A 1950s vision of a moon base. Wearing a silver jumpsuit with a bubble helmet.', image: 'https://picsum.photos/seed/space/800/600' },
+  { id: 'woodstock', name: '1960s Psychedelia', description: 'A music festival with colorful vans. Wearing tie-dye and round sunglasses.', image: 'https://picsum.photos/seed/hippie/800/600' },
+  { id: 'prehistoric', name: 'Prehistoric Era', description: 'A prehistoric landscape with ferns and a volcano. Dressed in primitive furs.', image: 'https://picsum.photos/seed/caveman/800/600' },
+  { id: 'noir', name: 'Film Noir', description: 'A shadowy detective office in 1940s LA. Dressed in a trench coat and fedora.', image: 'https://picsum.photos/seed/noir/800/600' },
+  { id: 'steampunk', name: 'Steampunk Workshop', description: 'A workshop filled with brass gears. Wearing goggles and a leather apron.', image: 'https://picsum.photos/seed/steampunk/800/600' },
+  { id: 'atlantis', name: 'Lost City of Atlantis', description: 'An underwater city ruins. Garments made of sea silk, pearls, and coral.', image: 'https://picsum.photos/seed/atlantis/800/600' },
+  { id: 'mars', name: 'Mars Colony 2150', description: 'A futuristic colony on the red planet. Wearing a high-tech spacesuit.', image: 'https://picsum.photos/seed/mars/800/600' },
+  { id: 'disco', name: 'Disco Fever', description: 'A 1970s disco dance floor. Wearing a sequined jumpsuit and platform shoes.', image: 'https://picsum.photos/seed/disco/800/600' },
+  { id: 'frenchrev', name: 'French Revolution', description: '18th-century Paris streets. Revolutionary attire with a cockade hat.', image: 'https://picsum.photos/seed/revolution/800/600' },
 ];

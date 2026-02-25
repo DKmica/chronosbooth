@@ -62,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // Set the provided Gemini API Key
-        securePrefs.edit().putString("google_ai_api_key", "AIzaSyDNfsSzZCFx3FPbR6TF6oCqe7U6wkNVL1Q").apply();
+        securePrefs.edit().putString("google_ai_api_key", "AIzaSyB6PRze2bJV8T9MaPF_RJxj5qbKwdWNlxw").apply();
 
         setContentView(R.layout.activity_main);
         webView = findViewById(R.id.webView);
@@ -71,6 +71,10 @@ public class MainActivity extends AppCompatActivity {
             new ActivityResultContracts.RequestPermission(),
             isGranted -> {
                 Log.d(TAG, "Camera permission granted: " + isGranted);
+                if (isGranted) {
+                    // Try common callback names found in web-to-native implementations
+                    webView.evaluateJavascript("if(window.onCameraPermissionGranted) onCameraPermissionGranted();", null);
+                }
             }
         );
 
@@ -87,7 +91,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setLoadWithOverviewMode(true);
         settings.setUseWideViewPort(true);
         
-        webView.setBackgroundColor(Color.WHITE); 
+        webView.setBackgroundColor(Color.parseColor("#0a0502")); 
         
         webView.addJavascriptInterface(new ChronosBridge(), "ChronosAndroid");
 
@@ -173,11 +177,18 @@ public class MainActivity extends AppCompatActivity {
                     Log.d(TAG, "Analysis successful: " + result);
                     
                     runOnUiThread(() -> {
-                        String js = String.format("if(window.onAnalysisResult) { window.onAnalysisResult('%s', '%s'); } else { console.error('onAnalysisResult not found'); }", callbackId, escapeJs(result));
+                        // Support multiple possible callback names for robustness
+                        String js = String.format(
+                            "if(window.onAnalysisResult) { window.onAnalysisResult('%1$s', '%2$s'); }" +
+                            "else if(window.handleAnalysisResult) { window.handleAnalysisResult('%1$s', '%2$s'); }" +
+                            "else { console.error('No analysis callback found for %1$s'); }", 
+                            callbackId, escapeJs(result)
+                        );
                         webView.evaluateJavascript(js, null);
                     });
                 } catch (Exception e) {
                     Log.e(TAG, "Analysis failed", e);
+                    sendErrorToWeb(callbackId, e.getMessage());
                 }
             });
         }
@@ -203,12 +214,29 @@ public class MainActivity extends AppCompatActivity {
                     Log.d(TAG, "Transformation successful: " + result);
                     
                     runOnUiThread(() -> {
-                        String js = String.format("if(window.onTransformationResult) { window.onTransformationResult('%s', '%s'); } else { console.error('onTransformationResult not found'); }", callbackId, escapeJs(result));
+                        String js = String.format(
+                            "if(window.onTransformationResult) { window.onTransformationResult('%1$s', '%2$s'); }" +
+                            "else if(window.handleTransformationResult) { window.handleTransformationResult('%1$s', '%2$s'); }" +
+                            "else { console.error('No transformation callback found for %1$s'); }",
+                            callbackId, escapeJs(result)
+                        );
                         webView.evaluateJavascript(js, null);
                     });
                 } catch (Exception e) {
                     Log.e(TAG, "Transformation failed", e);
+                    sendErrorToWeb(callbackId, e.getMessage());
                 }
+            });
+        }
+
+        private void sendErrorToWeb(String callbackId, String error) {
+            runOnUiThread(() -> {
+                String js = String.format(
+                    "if(window.onBridgeError) { window.onBridgeError('%1$s', '%2$s'); }" +
+                    "else if(window.handleBridgeError) { window.handleBridgeError('%1$s', '%2$s'); }",
+                    callbackId, escapeJs(error)
+                );
+                webView.evaluateJavascript(js, null);
             });
         }
 
