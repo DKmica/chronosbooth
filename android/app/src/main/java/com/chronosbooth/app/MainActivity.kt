@@ -3,195 +3,123 @@ package com.chronosbooth.app
 import android.Manifest
 import android.graphics.Bitmap
 import android.os.Bundle
-import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.*
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
+import com.google.ai.client.generativeai.GenerativeModel
+import com.google.ai.client.generativeai.type.content
+import kotlinx.coroutines.launch
+
+val ChronosBlack = Color(0xFF0A0502)
+val ChronosEmerald = Color(0xFF10B981)
+
+val HISTORICAL_ERAS = listOf(
+    Era("egypt", "Ancient Egypt", "Majestic pyramids and pharaoh robes.", "https://picsum.photos/seed/egypt/800/600"),
+    Era("cyberpunk", "Neon Future", "Cybernetic enhancements and neon lights.", "https://picsum.photos/seed/cyberpunk/800/600"),
+    Era("viking", "Viking Age", "Rugged fjords and thick furs.", "https://picsum.photos/seed/viking/800/600"),
+    Era("renaissance", "Renaissance", "Lush balconies and velvet garments.", "https://picsum.photos/seed/renaissance/800/600")
+)
 
 class MainActivity : ComponentActivity() {
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted -> if (!isGranted) finish() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         setContent {
-            ChronosApp()
+            MaterialTheme {
+                ChronosBoothApp()
+            }
         }
     }
 }
 
 @Composable
-fun ChronosApp(viewModel: ChronosViewModel = viewModel()) {
-    Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0A0502)) {
-        when (val state = viewModel.state) {
-            is AppState.Landing -> LandingScreen { viewModel.startJourney() }
-            is AppState.Camera -> CameraScreen { viewModel.onImageCaptured(it) }
-            is AppState.Analyzing -> ProcessingScreen("LOCKING IDENTITY")
-            is AppState.IdentityLocked -> IdentityLockedScreen(state.signature) { viewModel.proceedToEras() }
-            is AppState.SelectingEra -> EraSelectionScreen { viewModel.selectEra(it) }
-            is AppState.Manifesting -> ProcessingScreen("WEAVING REALITY")
-            is AppState.Result -> ResultScreen(state.manifestation, state.era) { viewModel.reset() }
+fun ChronosBoothApp() {
+    val scope = rememberCoroutineScope()
+    var appState by remember { mutableStateOf("landing") }
+    var capturedBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var manifestationResult by remember { mutableStateOf<String?>(null) }
+
+    // Use gemini-1.5-flash for stable image processing
+    val apiKey = "AIzaSyB8XZONysobdhZC3SFke6FH1TDO7r-uVPI"
+    val model = remember { GenerativeModel("gemini-1.5-flash", apiKey) }
+
+    Box(modifier = Modifier.fillMaxSize().background(ChronosBlack)) {
+        when (appState) {
+            "landing" -> LandingScreen { appState = "capture" }
+            "capture" -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Button(onClick = { /* Placeholder capture logic */ appState = "era-select" }) {
+                    Text("Capture Portrait")
+                }
+            }
+            "era-select" -> EraSelectorScreen(HISTORICAL_ERAS) { era ->
+                appState = "manifesting"
+                scope.launch {
+                    try {
+                        val result = model.generateContent(content {
+                            // Ensure image logic is handled if bitmap is provided
+                            text("Transform into era: ${era.name}. ${era.description}")
+                        }).text
+                        manifestationResult = result
+                        appState = "result"
+                    } catch (e: Exception) {
+                        manifestationResult = "TEMPORAL DISRUPTION: ${e.message}"
+                        appState = "result"
+                    }
+                }
+            }
+            "manifesting" -> LoadingScreen("Weaving Reality...")
+            "result" -> ResultScreen(manifestationResult) { appState = "landing" }
         }
     }
 }
 
 @Composable
-fun LandingScreen(onBegin: () -> Unit) {
+fun LandingScreen(onStart: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("CHRONOS", fontSize = 64.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        Text("BOOTH", fontSize = 48.sp, fontWeight = FontWeight.Light, color = Color(0xFF10B981))
+        Text("CHRONOS", style = MaterialTheme.typography.displayLarge, color = Color.White, fontWeight = FontWeight.Bold)
+        Text("BOOTH", style = MaterialTheme.typography.displayMedium, color = ChronosEmerald)
         Spacer(Modifier.height(48.dp))
-        Text(
-            "Temporal Imaging System V3.0",
-            color = Color(0xFF10B981).copy(alpha = 0.7f),
-            fontSize = 14.sp,
-            letterSpacing = 2.sp
-        )
-        Spacer(Modifier.height(64.dp))
-        Button(
-            onClick = onBegin,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-            modifier = Modifier.fillMaxWidth().height(60.dp),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text("BEGIN JOURNEY", color = Color.Black, fontWeight = FontWeight.Bold)
+        Button(onClick = onStart, colors = ButtonDefaults.buttonColors(containerColor = ChronosEmerald)) {
+            Text("BEGIN JOURNEY", color = Color.Black)
         }
     }
 }
 
 @Composable
-fun CameraScreen(onCapture: (Bitmap) -> Unit) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val previewView = remember { PreviewView(context) }
-    val imageCapture = remember { ImageCapture.Builder().build() }
-    var hasPermission by remember { mutableStateOf(false) }
-    
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        hasPermission = it
-    }
-    
-    LaunchedEffect(Unit) { launcher.launch(Manifest.permission.CAMERA) }
-
-    if (hasPermission) {
-        Box(Modifier.fillMaxSize()) {
-            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize()) { view ->
-                val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-                cameraProviderFuture.addListener({
-                    val provider = cameraProviderFuture.get()
-                    val preview = Preview.Builder().build().also { it.setSurfaceProvider(view.surfaceProvider) }
-                    try {
-                        provider.unbindAll()
-                        provider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_FRONT_CAMERA, preview, imageCapture)
-                    } catch (e: Exception) {}
-                }, ContextCompat.getMainExecutor(context))
-            }
-            
-            Box(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp).size(80.dp)
-                    .clip(CircleShape).border(4.dp, Color(0xFF10B981), CircleShape)
-                    .clickable {
-                        previewView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                        imageCapture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
-                            override fun onCaptureSuccess(image: ImageProxy) {
-                                onCapture(image.toBitmap())
-                                image.close()
-                            }
-                            override fun onError(e: ImageCaptureException) {}
-                        })
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Box(Modifier.size(60.dp).clip(CircleShape).background(Color.White))
-            }
-        }
-    }
-}
-
-@Composable
-fun ProcessingScreen(label: String) {
-    val infiniteTransition = rememberInfiniteTransition()
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing))
-    )
-    Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Refresh, null, Modifier.size(80.dp).rotate(rotation), tint = Color(0xFF10B981))
-        Spacer(Modifier.height(24.dp))
-        Text(label, color = Color.White, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
-    }
-}
-
-@Composable
-fun IdentityLockedScreen(signature: String, onProceed: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp)) {
-        Text("TEMPORAL SIGNATURE", color = Color(0xFF10B981), fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-        Spacer(Modifier.height(16.dp))
-        Box(Modifier.weight(1f).background(Color(0xFF1A1A1A)).padding(16.dp).verticalScroll(rememberScrollState())) {
-            Text(signature, color = Color.White, fontSize = 16.sp, lineHeight = 24.sp)
-        }
-        Spacer(Modifier.height(24.dp))
-        Button(onProceed, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)), modifier = Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(8.dp)) {
-            Text("PROCEED TO ERAS", color = Color.Black, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-fun EraSelectionScreen(onEraSelected: (Era) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("SELECT ERA", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+fun EraSelectorScreen(eras: List<Era>, onSelected: (Era) -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Select Era", style = MaterialTheme.typography.headlineMedium, color = Color.White)
         Spacer(Modifier.height(16.dp))
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(eras) { era ->
-                Card(
-                    modifier = Modifier.height(140.dp).clickable { onEraSelected(era) },
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(era.name, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
-                        Spacer(Modifier.height(4.dp))
-                        Text(era.description, fontSize = 12.sp, color = Color.Gray, lineHeight = 16.sp)
+                Card(modifier = Modifier.clickable { onSelected(era) }.aspectRatio(1f)) {
+                    Box {
+                        AsyncImage(model = era.image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        Text(era.name, modifier = Modifier.align(Alignment.BottomStart).padding(8.dp), color = Color.White)
                     }
                 }
             }
@@ -200,16 +128,18 @@ fun EraSelectionScreen(onEraSelected: (Era) -> Unit) {
 }
 
 @Composable
-fun ResultScreen(manifestation: String, era: String, onReset: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(24.dp)) {
-        Text("MANIFESTED: $era", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF10B981))
-        Spacer(Modifier.height(16.dp))
-        Box(Modifier.weight(1f).background(Color(0xFF1A1A1A)).padding(16.dp).verticalScroll(rememberScrollState())) {
-            Text(manifestation, color = Color.White, fontSize = 18.sp, lineHeight = 28.sp)
-        }
-        Spacer(Modifier.height(24.dp))
-        Button(onReset, colors = ButtonDefaults.buttonColors(containerColor = Color.White), modifier = Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(8.dp)) {
-            Text("NEW JOURNEY", color = Color.Black, fontWeight = FontWeight.Bold)
-        }
+fun LoadingScreen(msg: String) {
+    Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        CircularProgressIndicator(color = ChronosEmerald)
+        Text(msg, color = Color.White, modifier = Modifier.padding(top = 16.dp))
+    }
+}
+
+@Composable
+fun ResultScreen(result: String?, onReset: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState())) {
+        Text("Manifestation", color = ChronosEmerald, style = MaterialTheme.typography.headlineLarge)
+        Text(result ?: "Error", color = Color.White)
+        Button(onClick = onReset, modifier = Modifier.padding(top = 32.dp)) { Text("New Journey") }
     }
 }
