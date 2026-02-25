@@ -101,7 +101,7 @@ export default function App() {
 
     setState('generating');
     try {
-      const result = await transformToEra(photo, era.description);
+      const result = await transformToEra(photo, era.description, undefined, analysis || undefined);
       setResultImage(result);
       setState('result');
     } catch (err) {
@@ -116,7 +116,7 @@ export default function App() {
     
     setIsProcessing(true);
     try {
-      const result = await transformToEra(photo, "", editPrompt);
+      const result = await transformToEra(photo, "", editPrompt, analysis || undefined);
       if (result) {
         setResultImage(result);
         setState('result');
