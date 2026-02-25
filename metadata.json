@@ -1,0 +1,5 @@
+{
+  "name": "Chronos Booth",
+  "description": "A time-traveling photo booth that inserts your face into historical scenes using Gemini AI.",
+  "requestFramePermissions": ["camera"]
+}
