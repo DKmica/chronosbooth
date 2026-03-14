@@ -19,7 +19,9 @@ import {
   Clock,
   Save,
   Trash2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { Camera } from './components/Camera';
 import { EraSelector } from './components/EraSelector';
@@ -49,6 +51,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [editPrompt, setEditPrompt] = useState('');
   const [savedPhotos, setSavedPhotos] = useState<SavedPhoto[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('chronos_saved_portraits');
@@ -62,19 +65,16 @@ export default function App() {
   }, []);
 
   const savePhoto = (data: string) => {
-  const newPhoto: SavedPhoto = {
-    // Fallback ID generation
-    id: window.isSecureContext && crypto.randomUUID 
-        ? crypto.randomUUID() 
-        : Math.random().toString(36).substring(2, 15),
-    data,
-    date: new Date().toLocaleString()
+    const newPhoto: SavedPhoto = {
+      id: crypto.randomUUID(),
+      data,
+      date: new Date().toLocaleString()
+    };
+    const updated = [newPhoto, ...savedPhotos].slice(0, 12); // Limit to 12 photos
+    setSavedPhotos(updated);
+    localStorage.setItem('chronos_saved_portraits', JSON.stringify(updated));
+    alert("Portrait saved to your local gallery!");
   };
-  const updated = [newPhoto, ...savedPhotos].slice(0, 12);
-  setSavedPhotos(updated);
-  localStorage.setItem('chronos_saved_portraits', JSON.stringify(updated));
-  alert("Portrait saved to temporal records!");
-};
 
   const deletePhoto = (id: string) => {
     const updated = savedPhotos.filter(p => p.id !== id);
@@ -85,12 +85,14 @@ export default function App() {
   const handleCapture = async (base64: string) => {
     setPhoto(base64);
     setIsProcessing(true);
+    setError(null);
     setState('era-select');
     try {
       const result = await analyzeImage(base64);
       setAnalysis(result);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -98,42 +100,37 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!photo || !selectedEraId) return;
-
+    
     const era = ERAS.find(e => e.id === selectedEraId);
     if (!era) return;
 
-    setIsProcessing(true);
     setState('generating');
+    setError(null);
     try {
-      const result = await transformToEra(photo, era.description, undefined, analysis || undefined);
-      if (!result) {
-        throw new Error('No image was returned from Gemini.');
-      }
+      const result = await transformToEra(photo, era.description);
       setResultImage(result);
       setState('result');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message);
       setState('era-select');
-      alert("Generation failed. Please try again.");
-    } finally {
-      setIsProcessing(false);
     }
   };
 
   const handleManualEdit = async () => {
     if (!photo || !editPrompt) return;
-
+    
     setIsProcessing(true);
+    setError(null);
     try {
-      const result = await transformToEra(photo, "", editPrompt, analysis || undefined);
-      if (!result) {
-        throw new Error('No image was returned from Gemini.');
+      const result = await transformToEra(photo, "", editPrompt);
+      if (result) {
+        setResultImage(result);
+        setState('result');
       }
-      setResultImage(result);
-      setState('result');
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Edit failed. Please try again.");
+      setError(err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -145,6 +142,7 @@ export default function App() {
     setSelectedEraId(null);
     setResultImage(null);
     setEditPrompt('');
+    setError(null);
     setState('landing');
   };
 
@@ -195,6 +193,30 @@ export default function App() {
         "relative z-10 mx-auto px-6 py-12 transition-all duration-500",
         state === 'capture' ? "max-w-7xl" : "max-w-5xl"
       )}>
+        {/* Global Error Display */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start space-x-3 text-red-400"
+            >
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 text-sm">
+                <p className="font-semibold">Temporal Error</p>
+                <p className="opacity-80">{error}</p>
+              </div>
+              <button 
+                onClick={() => setError(null)}
+                className="p-1 hover:bg-red-500/10 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence mode="wait">
           {state === 'landing' && (
             <motion.div
@@ -329,7 +351,15 @@ export default function App() {
                       animate={{ opacity: 1, scale: 1 }}
                       className="group relative aspect-[4/3] rounded-2xl overflow-hidden border border-white/10 bg-zinc-900"
                     >
-                      <img src={photoItem.data} alt="Saved" className="w-full h-full object-cover" />
+                      <img 
+                        src={photoItem.data} 
+                        alt="Saved" 
+                        className="w-full h-full object-cover transition-opacity duration-500" 
+                        loading="lazy"
+                        decoding="async"
+                        onLoad={(e) => (e.currentTarget.style.opacity = '1')}
+                        style={{ opacity: 0 }}
+                      />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-4">
                         <div className="flex items-center justify-between">
                           <div className="text-xs text-zinc-400">
@@ -338,19 +368,9 @@ export default function App() {
                           </div>
                           <div className="flex space-x-2">
                             <button 
-                              onClick={async () => {
+                              onClick={() => {
                                 setPhoto(photoItem.data);
                                 setState('era-select');
-                                setIsProcessing(true);
-                                try {
-                                  const result = await analyzeImage(photoItem.data);
-                                  setAnalysis(result);
-                                } catch (err) {
-                                  console.error(err);
-                                  setAnalysis('Analysis unavailable for this saved portrait. You can still generate an era transformation.');
-                                } finally {
-                                  setIsProcessing(false);
-                                }
                               }}
                               className="p-2 bg-emerald-500 text-black rounded-lg hover:bg-emerald-400 transition-colors"
                               title="Use this portrait"
@@ -420,7 +440,12 @@ export default function App() {
                       <span>Save Original</span>
                     </button>
                     <div className="flex items-center space-x-4 p-3 rounded-2xl bg-white/5 border border-white/10">
-                      <img src={photo} alt="Source" className="w-12 h-12 rounded-lg object-cover" />
+                      <img 
+                        src={photo} 
+                        alt="Source" 
+                        className="w-12 h-12 rounded-lg object-cover" 
+                        decoding="async"
+                      />
                       <div className="text-xs">
                         <div className="text-emerald-400 font-semibold uppercase tracking-wider">Subject Locked</div>
                         <div className="text-zinc-500">Temporal signature captured</div>
@@ -578,12 +603,13 @@ export default function App() {
                   >
                     {resultImage ? (
                       <motion.img 
-                        initial={{ filter: 'brightness(2) blur(20px)' }}
-                        animate={{ filter: 'brightness(1) blur(0px)' }}
+                        initial={{ filter: 'brightness(2) blur(20px)', opacity: 0 }}
+                        animate={{ filter: 'brightness(1) blur(0px)', opacity: 1 }}
                         transition={{ duration: 1.2 }}
                         src={resultImage} 
                         alt="Result" 
                         className="w-full h-full object-contain" 
+                        decoding="async"
                       />
                     ) : (
                       <div className="flex items-center justify-center h-full text-zinc-500">

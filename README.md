@@ -1,55 +1,20 @@
-# Chronos Booth (Native Android)
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
 
-Chronos Booth is now a **native Android app** (Jetpack Compose) that:
+# Run and deploy your AI Studio app
 
-- Captures a photo from camera or uploads from gallery.
-- Uses Gemini to **analyze** the portrait.
-- Uses Gemini image generation to create a transformed image in a selected era style.
-- Runs fully as an Android app without webview/web runtime dependencies.
+This contains everything you need to run your app locally.
 
-## Project location
+View your app in AI Studio: https://ai.studio/apps/2568f165-23a4-4848-8c9c-179b8725b6ea
 
-- Android app: `android/`
+## Run Locally
 
-## Secure API key setup (do not commit secrets)
+**Prerequisites:**  Node.js
 
-> ⚠️ Real production security: do **not** ship long-lived API keys in client apps.
-> Use your own backend token exchange/proxy for Play Store production.
 
-For local development in this repo:
-
-1. Add your key in `android/local.properties` (this file is gitignored):
-   ```properties
-   GEMINI_API_KEY=your_key_here
-   ```
-2. Or set an environment variable:
-   ```bash
-   export GEMINI_API_KEY=your_key_here
-   ```
-
-The app reads `GEMINI_API_KEY` into `BuildConfig` during build.
-
-## Build debug APK
-
-```bash
-cd android
-gradle assembleDebug
-```
-
-## Build release bundle (AAB)
-
-```bash
-cd android
-gradle bundleRelease
-```
-
-Output:
-`android/app/build/outputs/bundle/release/app-release.aab`
-
-## Google Play readiness checklist
-
-1. Configure your release keystore/signing config.
-2. Replace default launcher icon and branding assets.
-3. Increment `versionCode`/`versionName` for each release.
-4. Add privacy policy and complete Play Console Data Safety form.
-5. Move API key usage to secure backend before production launch.
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
